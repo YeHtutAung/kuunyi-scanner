@@ -10,3 +10,6 @@ local.properties
 *.jks
 *.keystore
 app/build/
+
+# Git worktrees
+.worktrees/
