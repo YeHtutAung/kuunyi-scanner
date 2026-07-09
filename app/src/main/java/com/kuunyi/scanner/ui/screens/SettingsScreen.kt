@@ -20,8 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,10 +32,14 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -61,6 +65,7 @@ fun SettingsScreen(vm: ScannerViewModel) {
     val scanCount by vm.scanCount.collectAsStateWithLifecycle()
     val gateName by vm.gateName.collectAsStateWithLifecycle()
 
+    val focusManager = LocalFocusManager.current
     val view = LocalView.current
     val window = (LocalContext.current as Activity).window
     SideEffect {
@@ -134,21 +139,23 @@ fun SettingsScreen(vm: ScannerViewModel) {
                     .fillMaxWidth()
                     .padding(vertical = 8.dp)
             ) {
+                var hasTouched by remember { mutableStateOf(false) }
                 OutlinedTextField(
                     value = gateName,
-                    onValueChange = { vm.setGateName(it) },
+                    onValueChange = { vm.setGateName(it); hasTouched = true },
                     label = { Text("Gate name", fontSize = 13.sp) },
                     placeholder = { Text("e.g. Gate A, VIP Entrance", fontSize = 13.sp) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     modifier = Modifier.fillMaxWidth(),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.White,
                         unfocusedContainerColor = Color.White,
                     ),
-                    isError = gateName.isBlank(),
+                    isError = hasTouched && gateName.isBlank(),
                 )
-                if (gateName.isBlank()) {
+                if (hasTouched && gateName.isBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "Required — scanning is disabled without a gate name",
