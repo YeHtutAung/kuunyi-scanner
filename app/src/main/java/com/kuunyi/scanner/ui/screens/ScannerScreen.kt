@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
@@ -82,6 +83,10 @@ fun ScannerScreen(vm: ScannerViewModel) {
         WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
     }
 
+    // In TAP mode the user must press a button before each scan
+    var tapReady by remember { mutableStateOf(false) }
+    val scanEnabled = scanMode == ScanMode.CONTINUOUS || tapReady
+
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
@@ -106,7 +111,11 @@ fun ScannerScreen(vm: ScannerViewModel) {
         // Camera preview fills the background
         if (hasCameraPermission) {
             CameraPreview(
-                onBarcodeDetected = { vm.onBarcodeDetected(it) },
+                scanEnabled = scanEnabled,
+                onBarcodeDetected = {
+                    tapReady = false
+                    vm.onBarcodeDetected(it)
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -234,19 +243,42 @@ fun ScannerScreen(vm: ScannerViewModel) {
                     }
                 }
 
-                // "Point at the ticket QR" hint
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 54.dp)
-                        .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(999.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "Point at the ticket QR",
-                        fontSize = 12.5.sp,
-                        color = Color.White,
-                    )
+                if (scanMode == ScanMode.CONTINUOUS) {
+                    // Hint label
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 54.dp)
+                            .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(999.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("Point at the ticket QR", fontSize = 12.5.sp, color = Color.White)
+                    }
+                } else {
+                    // Tap-to-scan shutter button
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 40.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(72.dp)
+                                .background(Color.White.copy(alpha = 0.15f), CircleShape)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(58.dp)
+                                    .background(
+                                        if (tapReady) Color.White.copy(alpha = 0.6f) else Color.White,
+                                        CircleShape
+                                    )
+                                    .clickable { tapReady = true }
+                            )
+                        }
+                    }
                 }
 
                 // Demo panel — top-right corner, for testing without real QR codes
@@ -328,6 +360,7 @@ fun ScannerScreen(vm: ScannerViewModel) {
 
 @Composable
 private fun CameraPreview(
+    scanEnabled: Boolean,
     onBarcodeDetected: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -356,7 +389,7 @@ private fun CameraPreview(
                 .build()
 
             analysis.setAnalyzer(executor) { proxy: ImageProxy ->
-                if (detected.get()) { proxy.close(); return@setAnalyzer }
+                if (!scanEnabled || detected.get()) { proxy.close(); return@setAnalyzer }
                 val mediaImage = proxy.image
                 if (mediaImage == null) { proxy.close(); return@setAnalyzer }
                 val image = InputImage.fromMediaImage(mediaImage, proxy.imageInfo.rotationDegrees)

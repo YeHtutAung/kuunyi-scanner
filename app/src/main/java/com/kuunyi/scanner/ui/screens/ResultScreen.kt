@@ -2,6 +2,7 @@ package com.kuunyi.scanner.ui.screens
 
 import android.app.Activity
 import androidx.compose.animation.core.animateFloatAsState
+import com.kuunyi.scanner.util.FeedbackManager
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -51,16 +53,28 @@ import kotlinx.coroutines.delay
 fun ResultScreen(vm: ScannerViewModel) {
     val result by vm.currentResult.collectAsStateWithLifecycle()
     val scanMode by vm.scanMode.collectAsStateWithLifecycle()
+    val soundEnabled by vm.soundEnabled.collectAsStateWithLifecycle()
+    val vibrateEnabled by vm.vibrateEnabled.collectAsStateWithLifecycle()
 
     // Dark status bar (light icons on coloured background)
     val view = LocalView.current
-    val window = (LocalContext.current as Activity).window
+    val context = LocalContext.current
+    val window = (context as Activity).window
     SideEffect {
         WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
     }
 
     val r = result ?: return
     val bgColor = if (r is ScanResult.Valid) Green else Red
+
+    // Sound + vibration feedback on first appearance
+    val feedback = remember { FeedbackManager(context) }
+    DisposableEffect(Unit) { onDispose { feedback.release() } }
+    LaunchedEffect(r) {
+        val isValid = r is ScanResult.Valid
+        if (soundEnabled) { if (isValid) feedback.playValid() else feedback.playInvalid() }
+        if (vibrateEnabled) { if (isValid) feedback.vibrateValid() else feedback.vibrateInvalid() }
+    }
 
     // Entrance animation
     var visible by remember { mutableStateOf(false) }
