@@ -59,15 +59,15 @@ class ScannerViewModelTest {
     // --- Initial state ---
 
     @Test fun `initial screen is EventPicker`() {
-        assertEquals(Screen.EventPicker, ScannerViewModel().screen.value)
+        assertEquals(Screen.EventPicker, ScannerViewModel(verifier = FakeVerifier(), apiClient = FakeApiClient()).screen.value)
     }
 
     @Test fun `initial scan count is 0`() {
-        assertEquals(0, ScannerViewModel().scanCount.value)
+        assertEquals(0, ScannerViewModel(verifier = FakeVerifier(), apiClient = FakeApiClient()).scanCount.value)
     }
 
     @Test fun `initial selected event is the first`() {
-        val v = ScannerViewModel()
+        val v = ScannerViewModel(verifier = FakeVerifier(), apiClient = FakeApiClient())
         assertEquals("evt-summer-2026", v.selectedEvent.value.id)
     }
 
