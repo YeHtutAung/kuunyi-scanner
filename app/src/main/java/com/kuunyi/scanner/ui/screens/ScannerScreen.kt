@@ -34,6 +34,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,6 +74,9 @@ fun ScannerScreen(vm: ScannerViewModel) {
     val selectedEvent by vm.selectedEvent.collectAsStateWithLifecycle()
     val scanMode by vm.scanMode.collectAsStateWithLifecycle()
     val scanCount by vm.scanCount.collectAsStateWithLifecycle()
+    val loading by vm.loading.collectAsStateWithLifecycle()
+    val toastMessage by vm.toastMessage.collectAsStateWithLifecycle()
+    val scanResetKey by vm.scanResetKey.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     // Dark status bar (light icons on dark background)
@@ -102,6 +106,13 @@ fun ScannerScreen(vm: ScannerViewModel) {
         }
     }
 
+    LaunchedEffect(toastMessage) {
+        toastMessage?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show()
+            vm.clearToast()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -111,6 +122,7 @@ fun ScannerScreen(vm: ScannerViewModel) {
         if (hasCameraPermission) {
             CameraPreview(
                 scanEnabled = scanEnabled,
+                scanResetKey = scanResetKey,
                 onBarcodeDetected = {
                     tapReady = false
                     vm.onBarcodeDetected(it)
@@ -354,21 +366,32 @@ fun ScannerScreen(vm: ScannerViewModel) {
             Spacer(Modifier.navigationBarsPadding())
             NavPill(light = true)
         }
+
+        if (loading) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
+            ) {
+                androidx.compose.material3.CircularProgressIndicator(color = Color.White)
+            }
+        }
     }
 }
 
 @Composable
 private fun CameraPreview(
     scanEnabled: Boolean,
+    scanResetKey: Int,
     onBarcodeDetected: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember { PreviewView(context) }
-    val detected = remember { AtomicBoolean(false) }
-
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, scanResetKey) {
+        val detected = AtomicBoolean(false)   // fresh on each key change
         val options = BarcodeScannerOptions.Builder()
             .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
             .build()
