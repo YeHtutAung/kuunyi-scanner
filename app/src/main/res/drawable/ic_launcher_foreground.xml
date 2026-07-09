@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Adaptive icon foreground — 108×108dp canvas, safe zone is the inner 72×72dp (18dp inset).
+    Design: white ticket shape with notched sides + green checkmark.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!--
+        Ticket body — white filled, rounded corners (r=6), semicircle notches
+        cut into left and right edges at mid-height (y=54), notch radius=7.
+
+        Path goes clockwise from top-left:
+          top edge →  top-right corner ↓  right side ↓  right notch (sweep=0 = bulges left/inward)
+          right side ↓  bottom-right corner ←  bottom edge ←  bottom-left corner ↑
+          left side ↑  left notch (sweep=1/CW from bottom-to-top = bulges right/inward)
+          left side ↑  top-left corner
+    -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="
+            M28,36
+            L80,36
+            Q86,36 86,42
+            L86,47
+            A7,7 0 0,0 86,61
+            L86,66
+            Q86,72 80,72
+            L28,72
+            Q22,72 22,66
+            L22,61
+            A7,7 0 0,1 22,47
+            L22,42
+            Q22,36 28,36
+            Z"/>
+
+    <!-- Checkmark — green stroke on white ticket -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1E9E57"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M38,54 L50,66 L72,42"/>
+
+</vector>

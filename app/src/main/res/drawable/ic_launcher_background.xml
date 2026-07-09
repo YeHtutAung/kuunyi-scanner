@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Solid green base -->
+    <path
+        android:fillColor="#1E9E57"
+        android:pathData="M0,0 H108 V108 H0 Z"/>
+    <!-- Subtle radial highlight — slightly lighter centre -->
+    <path
+        android:fillColor="#10FFFFFF"
+        android:pathData="M108,0 A108,108 0 0,1 0,108 L0,0 Z"/>
+</vector>
