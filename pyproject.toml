@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kuunyi-scanner"
+version = "0.1.0"
+description = "A small, extensible CLI scanner for flagging risky patterns in a directory tree."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Ye Htut Aung", email = "yehtutaung.yha@gmail.com" }]
+keywords = ["scanner", "security", "secrets", "cli"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+]
+
+[project.urls]
+Homepage = "https://github.com/YeHtutAung/kuunyi-scanner"
+
+[project.scripts]
+kuunyi-scanner = "kuunyi_scanner.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["kuunyi_scanner*"]
