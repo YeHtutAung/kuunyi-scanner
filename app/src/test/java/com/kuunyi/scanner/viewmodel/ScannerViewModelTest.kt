@@ -1,225 +1,215 @@
 package com.kuunyi.scanner.viewmodel
 
-import com.kuunyi.scanner.data.ScanMode
-import com.kuunyi.scanner.data.ScanResult
-import com.kuunyi.scanner.data.Screen
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
+import com.kuunyi.scanner.data.*
+import com.kuunyi.scanner.network.ScanApiClient
+import com.kuunyi.scanner.network.ScanApiResult
+import com.kuunyi.scanner.util.TicketVerifier
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 
+// ---------- Fakes ----------
+
+class FakeVerifier(
+    private val result: TicketPayload? = null,
+    private val throws: Exception? = null,
+) : TicketVerifier(publicKeys = emptyMap()) {
+    override fun verify(raw: String, expectedEid: String): TicketPayload {
+        throws?.let { throw it }
+        return result ?: TicketPayload("TKT-001", "evt-summer-2026", "VIP", 1, Long.MAX_VALUE)
+    }
+}
+
+class FakeApiClient(
+    private val result: ScanApiResult = ScanApiResult.Ok,
+) : ScanApiClient(baseUrl = "", apiKey = "", versionCode = 0) {
+    override suspend fun recordScan(jti: String, eid: String, gate: String) = result
+}
+
+// ---------- Tests ----------
+
+@OptIn(ExperimentalCoroutinesApi::class)
 class ScannerViewModelTest {
 
-    private lateinit var vm: ScannerViewModel
+    private val testDispatcher = UnconfinedTestDispatcher()
 
     @Before
     fun setUp() {
-        vm = ScannerViewModel()
+        Dispatchers.setMain(testDispatcher)
     }
 
-    // ── Initial state ──────────────────────────────────────────────────────────
-
-    @Test
-    fun `initial screen is EventPicker`() {
-        assertEquals(Screen.EventPicker, vm.screen.value)
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
     }
 
-    @Test
-    fun `initial selected event is the first in the list`() {
-        assertEquals(vm.events.first(), vm.selectedEvent.value)
+    /** Helper: ViewModel with fakes, gate name pre-set so scans are not blocked. */
+    private fun vm(
+        verifier: TicketVerifier = FakeVerifier(),
+        api: ScanApiClient = FakeApiClient(),
+    ) = ScannerViewModel(verifier = verifier, apiClient = api).also { it.setGateName("Gate A") }
+
+    // --- Initial state ---
+
+    @Test fun `initial screen is EventPicker`() {
+        assertEquals(Screen.EventPicker, ScannerViewModel().screen.value)
     }
 
-    @Test
-    fun `initial scan mode is CONTINUOUS`() {
-        assertEquals(ScanMode.CONTINUOUS, vm.scanMode.value)
+    @Test fun `initial scan count is 0`() {
+        assertEquals(0, ScannerViewModel().scanCount.value)
     }
 
-    @Test
-    fun `initial sound enabled is true`() {
-        assertTrue(vm.soundEnabled.value)
+    @Test fun `initial selected event is the first`() {
+        val v = ScannerViewModel()
+        assertEquals("evt-summer-2026", v.selectedEvent.value.id)
     }
 
-    @Test
-    fun `initial vibrate enabled is true`() {
-        assertTrue(vm.vibrateEnabled.value)
+    // --- Navigation ---
+
+    @Test fun `startScanning navigates to Scanner`() {
+        val v = vm(); v.startScanning()
+        assertEquals(Screen.Scanner, v.screen.value)
     }
 
-    @Test
-    fun `initial current result is null`() {
-        assertEquals(null, vm.currentResult.value)
+    @Test fun `openSettings navigates to Settings`() {
+        val v = vm(); v.openSettings()
+        assertEquals(Screen.Settings, v.screen.value)
     }
 
-    @Test
-    fun `events list is not empty`() {
-        assertTrue(vm.events.isNotEmpty())
+    @Test fun `closeSettings returns to Scanner`() {
+        val v = vm(); v.openSettings(); v.closeSettings()
+        assertEquals(Screen.Scanner, v.screen.value)
     }
 
-    // ── Navigation ─────────────────────────────────────────────────────────────
-
-    @Test
-    fun `startScanning navigates to Scanner`() {
-        vm.startScanning()
-        assertEquals(Screen.Scanner, vm.screen.value)
+    @Test fun `switchEvent navigates to EventPicker`() {
+        val v = vm(); v.switchEvent()
+        assertEquals(Screen.EventPicker, v.screen.value)
     }
 
-    @Test
-    fun `openSettings navigates to Settings`() {
-        vm.openSettings()
-        assertEquals(Screen.Settings, vm.screen.value)
+    @Test fun `selectEvent updates selected event`() {
+        val v = vm()
+        v.selectEvent(v.events[1])
+        assertEquals("evt-night-aug", v.selectedEvent.value.id)
     }
 
-    @Test
-    fun `closeSettings navigates back to Scanner`() {
-        vm.openSettings()
-        vm.closeSettings()
-        assertEquals(Screen.Scanner, vm.screen.value)
+    @Test fun `onNext returns to Scanner`() {
+        val v = vm(); v.onDemoResult(ScanResult.Valid("T", "GA", 1)); v.onNext()
+        assertEquals(Screen.Scanner, v.screen.value)
     }
 
-    @Test
-    fun `switchEvent navigates to EventPicker`() {
-        vm.startScanning()
-        vm.switchEvent()
-        assertEquals(Screen.EventPicker, vm.screen.value)
+    // --- Scan results ---
+
+    @Test fun `valid scan navigates to Result and increments count`() = runTest {
+        val v = vm(api = FakeApiClient(ScanApiResult.Ok))
+        v.onBarcodeDetected("any")
+        assertEquals(Screen.Result, v.screen.value)
+        assertTrue(v.currentResult.value is ScanResult.Valid)
+        assertEquals(1, v.scanCount.value)
     }
 
-    @Test
-    fun `onNext navigates to Scanner`() {
-        vm.onDemoResult(ScanResult.Valid("#TKT-01", "VIP", 1))
-        vm.onNext()
-        assertEquals(Screen.Scanner, vm.screen.value)
+    @Test fun `already-used scan shows AlreadyUsed and does not increment count`() = runTest {
+        val v = vm(api = FakeApiClient(ScanApiResult.AlreadyUsed("Today · 9 AM", "Gate B")))
+        v.onBarcodeDetected("any")
+        assertTrue(v.currentResult.value is ScanResult.AlreadyUsed)
+        assertEquals(0, v.scanCount.value)
     }
 
-    // ── Settings toggles ───────────────────────────────────────────────────────
-
-    @Test
-    fun `selectEvent updates selectedEvent`() {
-        val second = vm.events[1]
-        vm.selectEvent(second)
-        assertEquals(second, vm.selectedEvent.value)
+    @Test fun `server 404 shows FakeTicket`() = runTest {
+        val v = vm(api = FakeApiClient(ScanApiResult.NotFound))
+        v.onBarcodeDetected("any")
+        assertTrue(v.currentResult.value is ScanResult.FakeTicket)
     }
 
-    @Test
-    fun `setScanMode TAP updates scanMode`() {
-        vm.setScanMode(ScanMode.TAP)
-        assertEquals(ScanMode.TAP, vm.scanMode.value)
+    @Test fun `invalid signature shows FakeTicket`() = runTest {
+        val v = vm(verifier = FakeVerifier(throws = InvalidSignatureException()))
+        v.onBarcodeDetected("any")
+        assertTrue(v.currentResult.value is ScanResult.FakeTicket)
     }
 
-    @Test
-    fun `setScanMode toggles back to CONTINUOUS`() {
-        vm.setScanMode(ScanMode.TAP)
-        vm.setScanMode(ScanMode.CONTINUOUS)
-        assertEquals(ScanMode.CONTINUOUS, vm.scanMode.value)
+    @Test fun `malformed token shows FakeTicket`() = runTest {
+        val v = vm(verifier = FakeVerifier(throws = MalformedTokenException()))
+        v.onBarcodeDetected("any")
+        assertTrue(v.currentResult.value is ScanResult.FakeTicket)
     }
 
-    @Test
-    fun `setSoundEnabled false updates soundEnabled`() {
-        vm.setSoundEnabled(false)
-        assertFalse(vm.soundEnabled.value)
+    @Test fun `expired JWT shows Expired result with correct jti`() = runTest {
+        val v = vm(verifier = FakeVerifier(throws = ExpiredException("TKT-OLD", "GA", 1_000L)))
+        v.onBarcodeDetected("any")
+        val r = v.currentResult.value as ScanResult.Expired
+        assertEquals("TKT-OLD", r.ticketId)
+        assertEquals("GA", r.tier)
     }
 
-    @Test
-    fun `setSoundEnabled true restores soundEnabled`() {
-        vm.setSoundEnabled(false)
-        vm.setSoundEnabled(true)
-        assertTrue(vm.soundEnabled.value)
+    @Test fun `wrong event shows WrongEntrance with correct tier`() = runTest {
+        val v = vm(verifier = FakeVerifier(throws = WrongEventException("VIP", "evt-other", "evt-summer-2026")))
+        v.onBarcodeDetected("any")
+        val r = v.currentResult.value as ScanResult.WrongEntrance
+        assertEquals("VIP", r.ticketTier)
     }
 
-    @Test
-    fun `setVibrateEnabled false updates vibrateEnabled`() {
-        vm.setVibrateEnabled(false)
-        assertFalse(vm.vibrateEnabled.value)
+    // --- Error toasts ---
+
+    @Test fun `blank gate name shows toast and does not navigate`() = runTest {
+        val v = ScannerViewModel(verifier = FakeVerifier(), apiClient = FakeApiClient())
+        v.onBarcodeDetected("any")
+        assertNotNull(v.toastMessage.value)
+        assertNull(v.currentResult.value)
     }
 
-    // ── Scan results ───────────────────────────────────────────────────────────
-
-    @Test
-    fun `onDemoResult sets currentResult`() {
-        val result = ScanResult.Valid("#TKT-01", "VIP", 1)
-        vm.onDemoResult(result)
-        assertEquals(result, vm.currentResult.value)
+    @Test fun `network error shows toast and increments scanResetKey`() = runTest {
+        val v = vm(api = FakeApiClient(ScanApiResult.NetworkError))
+        val keyBefore = v.scanResetKey.value
+        v.onBarcodeDetected("any")
+        assertNotNull(v.toastMessage.value)
+        assertEquals(keyBefore + 1, v.scanResetKey.value)
+        assertNull(v.currentResult.value)
     }
 
-    @Test
-    fun `onDemoResult navigates to Result screen`() {
-        vm.onDemoResult(ScanResult.FakeTicket("#TKT-FAKE"))
-        assertEquals(Screen.Result, vm.screen.value)
+    @Test fun `auth error shows toast and increments scanResetKey`() = runTest {
+        val v = vm(api = FakeApiClient(ScanApiResult.AuthError))
+        val keyBefore = v.scanResetKey.value
+        v.onBarcodeDetected("any")
+        assertNotNull(v.toastMessage.value)
+        assertEquals(keyBefore + 1, v.scanResetKey.value)
     }
 
-    @Test
-    fun `Valid result increments scan count by 1`() {
-        val before = vm.scanCount.value
-        vm.onDemoResult(ScanResult.Valid("#TKT-01", "GA", 1))
-        assertEquals(before + 1, vm.scanCount.value)
+    // --- Settings ---
+
+    @Test fun `setSoundEnabled updates soundEnabled`() {
+        val v = vm(); v.setSoundEnabled(false); assertFalse(v.soundEnabled.value)
     }
 
-    @Test
-    fun `AlreadyUsed result does not increment scan count`() {
-        val before = vm.scanCount.value
-        vm.onDemoResult(ScanResult.AlreadyUsed("#TKT-01", "GA", "8:52 AM", "Gate A"))
-        assertEquals(before, vm.scanCount.value)
+    @Test fun `setVibrateEnabled updates vibrateEnabled`() {
+        val v = vm(); v.setVibrateEnabled(false); assertFalse(v.vibrateEnabled.value)
     }
 
-    @Test
-    fun `FakeTicket result does not increment scan count`() {
-        val before = vm.scanCount.value
-        vm.onDemoResult(ScanResult.FakeTicket("#TKT-FAKE"))
-        assertEquals(before, vm.scanCount.value)
+    @Test fun `setScanMode updates scanMode`() {
+        val v = vm(); v.setScanMode(ScanMode.TAP); assertEquals(ScanMode.TAP, v.scanMode.value)
     }
 
-    @Test
-    fun `Expired result does not increment scan count`() {
-        val before = vm.scanCount.value
-        vm.onDemoResult(ScanResult.Expired("#TKT-01", "GA", "Jul 11", "Jul 12"))
-        assertEquals(before, vm.scanCount.value)
+    @Test fun `clearToast nullifies toastMessage`() = runTest {
+        val v = vm(api = FakeApiClient(ScanApiResult.NetworkError))
+        v.onBarcodeDetected("any")
+        v.clearToast()
+        assertNull(v.toastMessage.value)
     }
 
-    @Test
-    fun `WrongEntrance result does not increment scan count`() {
-        val before = vm.scanCount.value
-        vm.onDemoResult(ScanResult.WrongEntrance("#TKT-01", "GA", "VIP"))
-        assertEquals(before, vm.scanCount.value)
+    @Test fun `demo result valid increments count`() {
+        val v = vm()
+        v.onDemoResult(ScanResult.Valid("T", "VIP", 1))
+        assertEquals(1, v.scanCount.value)
     }
 
-    @Test
-    fun `multiple valid scans accumulate in scan count`() {
-        val before = vm.scanCount.value
-        repeat(5) { i -> vm.onDemoResult(ScanResult.Valid("#TKT-0$i", "VIP", 1)) }
-        assertEquals(before + 5, vm.scanCount.value)
-    }
-
-    @Test
-    fun `only valid results counted across mixed scans`() {
-        val before = vm.scanCount.value
-        vm.onDemoResult(ScanResult.Valid("#T1", "VIP", 1))
-        vm.onDemoResult(ScanResult.AlreadyUsed("#T2", "GA", "8:52 AM", "Gate A"))
-        vm.onDemoResult(ScanResult.FakeTicket("#T3"))
-        vm.onDemoResult(ScanResult.Valid("#T4", "GA", 1))
-        vm.onDemoResult(ScanResult.Expired("#T5", "GA", "window", "scanned"))
-        assertEquals(before + 2, vm.scanCount.value)
-    }
-
-    // ── onBarcodeDetected (demo cycling) ───────────────────────────────────────
-
-    @Test
-    fun `onBarcodeDetected sets a result`() {
-        vm.onBarcodeDetected("some-qr-data")
-        assertNotNull(vm.currentResult.value)
-    }
-
-    @Test
-    fun `onBarcodeDetected navigates to Result screen`() {
-        vm.onBarcodeDetected("some-qr-data")
-        assertEquals(Screen.Result, vm.screen.value)
-    }
-
-    @Test
-    fun `onBarcodeDetected cycles through different result types`() {
-        val types = (1..5).map { i ->
-            vm.onBarcodeDetected("qr-$i")
-            vm.currentResult.value!!::class
-        }.distinct()
-        assertTrue("Expected multiple result types across 5 scans", types.size > 1)
+    @Test fun `demo result non-valid does not increment count`() {
+        val v = vm()
+        v.onDemoResult(ScanResult.FakeTicket())
+        assertEquals(0, v.scanCount.value)
     }
 }

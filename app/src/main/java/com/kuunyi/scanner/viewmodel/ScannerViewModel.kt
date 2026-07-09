@@ -1,69 +1,123 @@
 package com.kuunyi.scanner.viewmodel
 
 import androidx.lifecycle.ViewModel
-import com.kuunyi.scanner.data.Event
-import com.kuunyi.scanner.data.ScanMode
-import com.kuunyi.scanner.data.ScanResult
-import com.kuunyi.scanner.data.Screen
+import androidx.lifecycle.viewModelScope
+import com.kuunyi.scanner.BuildConfig
+import com.kuunyi.scanner.data.*
+import com.kuunyi.scanner.network.ScanApiClient
+import com.kuunyi.scanner.network.ScanApiResult
+import com.kuunyi.scanner.util.TicketVerifier
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
 
-class ScannerViewModel : ViewModel() {
+class ScannerViewModel(
+    private val verifier: TicketVerifier = TicketVerifier(
+        publicKeys = mapOf("v1" to BuildConfig.ED25519_PUBLIC_KEY_V1)
+    ),
+    private val apiClient: ScanApiClient = ScanApiClient(
+        baseUrl = BuildConfig.SCAN_API_BASE_URL,
+        apiKey = BuildConfig.SCAN_API_KEY,
+        versionCode = BuildConfig.VERSION_CODE,
+    ),
+) : ViewModel() {
 
     val events = listOf(
-        Event("1", "Summer Fest 2026", "Jul 12", "Main Arena"),
-        Event("2", "Night Market Aug", "Aug 03", "Riverside"),
+        Event("evt-summer-2026", "Summer Fest 2026", "Jul 12", "Main Arena"),
+        Event("evt-night-aug",   "Night Market Aug", "Aug 03", "Riverside"),
     )
 
-    private val _screen = MutableStateFlow<Screen>(Screen.EventPicker)
-    val screen = _screen.asStateFlow()
-
+    private val _screen        = MutableStateFlow<Screen>(Screen.EventPicker)
     private val _selectedEvent = MutableStateFlow(events.first())
-    val selectedEvent = _selectedEvent.asStateFlow()
-
-    private val _scanMode = MutableStateFlow(ScanMode.CONTINUOUS)
-    val scanMode = _scanMode.asStateFlow()
-
-    private val _soundEnabled = MutableStateFlow(true)
-    val soundEnabled = _soundEnabled.asStateFlow()
-
+    private val _scanMode      = MutableStateFlow(ScanMode.CONTINUOUS)
+    private val _soundEnabled  = MutableStateFlow(true)
     private val _vibrateEnabled = MutableStateFlow(true)
-    val vibrateEnabled = _vibrateEnabled.asStateFlow()
-
-    private val _scanCount = MutableStateFlow(1204)
-    val scanCount = _scanCount.asStateFlow()
-
+    private val _scanCount     = MutableStateFlow(0)
     private val _currentResult = MutableStateFlow<ScanResult?>(null)
-    val currentResult = _currentResult.asStateFlow()
+    private val _loading       = MutableStateFlow(false)
+    private val _gateName      = MutableStateFlow("")
+    private val _toastMessage  = MutableStateFlow<String?>(null)
 
-    // Demo results cycle for testing without real ticket QRs
-    private val demoResults = listOf(
-        ScanResult.Valid("#TKT-9F2A31", "VIP", 1),
-        ScanResult.AlreadyUsed("#TKT-4B77C0", "GA", "Today · 8:52 AM", "Gate — Main Arena"),
-        ScanResult.FakeTicket("#TKT-FAKE01"),
-        ScanResult.Expired("#TKT-2210AA", "GA", "Jul 11 · 6:00–10:00 PM", "Jul 12 · 9:41 AM"),
-        ScanResult.WrongEntrance("#TKT-77C931", "GA", "VIP"),
-    )
-    private var demoIndex = 0
+    // Incrementing this signals CameraPreview to reset its detection state.
+    // Incremented after non-navigate errors (network/auth/server) so the user can scan again.
+    private val _scanResetKey  = MutableStateFlow(0)
 
-    fun selectEvent(event: Event) {
-        _selectedEvent.value = event
-    }
+    val screen         = _screen.asStateFlow()
+    val selectedEvent  = _selectedEvent.asStateFlow()
+    val scanMode       = _scanMode.asStateFlow()
+    val soundEnabled   = _soundEnabled.asStateFlow()
+    val vibrateEnabled = _vibrateEnabled.asStateFlow()
+    val scanCount      = _scanCount.asStateFlow()
+    val currentResult  = _currentResult.asStateFlow()
+    val loading        = _loading.asStateFlow()
+    val gateName       = _gateName.asStateFlow()
+    val toastMessage   = _toastMessage.asStateFlow()
+    val scanResetKey   = _scanResetKey.asStateFlow()
 
-    fun startScanning() {
-        _screen.value = Screen.Scanner
-    }
+    fun setGateName(name: String) { _gateName.value = name }
+    fun clearToast() { _toastMessage.value = null }
 
     fun onBarcodeDetected(rawValue: String) {
-        // In production: decrypt and validate the signed QR payload against the server.
-        // For now: cycle through demo result states.
-        val result = parseBarcode(rawValue)
-        handleResult(result)
+        if (_loading.value) return
+
+        val gate = _gateName.value
+        if (gate.isBlank()) {
+            _toastMessage.value = "Set a gate name in Settings before scanning"
+            return
+        }
+
+        val payload = try {
+            verifier.verify(rawValue, expectedEid = _selectedEvent.value.id)
+        } catch (e: MalformedTokenException)   { handleResult(ScanResult.FakeTicket()); return }
+        catch (e: UnknownKeyException)         { handleResult(ScanResult.FakeTicket()); return }
+        catch (e: InvalidSignatureException)   { handleResult(ScanResult.FakeTicket()); return }
+        catch (e: ExpiredException) {
+            val validFor  = formatTimestamp(e.expSeconds)
+            val scannedAt = SimpleDateFormat("MMM d · h:mm a", Locale.getDefault()).format(Date())
+            handleResult(ScanResult.Expired(e.jti, e.tier, validFor, scannedAt)); return
+        }
+        catch (e: WrongEventException) {
+            handleResult(ScanResult.WrongEntrance(
+                ticketId   = "",
+                ticketTier = e.ticketTier,
+                gateTier   = _selectedEvent.value.name,
+            )); return
+        }
+        catch (_: TicketVerificationException) { handleResult(ScanResult.FakeTicket()); return }
+
+        _loading.value = true
+        viewModelScope.launch {
+            val apiResult = apiClient.recordScan(payload.jti, payload.eid, gate)
+            _loading.value = false
+            when (apiResult) {
+                is ScanApiResult.Ok ->
+                    handleResult(ScanResult.Valid(payload.jti, payload.tier, payload.admits))
+                is ScanApiResult.AlreadyUsed ->
+                    handleResult(ScanResult.AlreadyUsed(
+                        payload.jti, payload.tier,
+                        apiResult.firstScanTime, apiResult.firstScanGate,
+                    ))
+                is ScanApiResult.NotFound ->
+                    handleResult(ScanResult.FakeTicket(payload.jti))
+                is ScanApiResult.AuthError -> {
+                    _toastMessage.value = "Auth error — contact supervisor"
+                    _scanResetKey.value++
+                }
+                is ScanApiResult.ServerError -> {
+                    _toastMessage.value = "Server error, try again"
+                    _scanResetKey.value++
+                }
+                is ScanApiResult.NetworkError -> {
+                    _toastMessage.value = "No connection"
+                    _scanResetKey.value++
+                }
+            }
+        }
     }
 
-    fun onDemoResult(result: ScanResult) {
-        handleResult(result)
-    }
+    fun onDemoResult(result: ScanResult) { handleResult(result) }
 
     private fun handleResult(result: ScanResult) {
         _currentResult.value = result
@@ -71,29 +125,16 @@ class ScannerViewModel : ViewModel() {
         _screen.value = Screen.Result
     }
 
-    private fun parseBarcode(raw: String): ScanResult {
-        val result = demoResults[demoIndex % demoResults.size]
-        demoIndex++
-        return result
-    }
+    private fun formatTimestamp(epochSeconds: Long): String =
+        SimpleDateFormat("MMM d · h:mm a", Locale.getDefault()).format(Date(epochSeconds * 1000))
 
-    fun onNext() {
-        _screen.value = Screen.Scanner
-    }
-
-    fun openSettings() {
-        _screen.value = Screen.Settings
-    }
-
-    fun closeSettings() {
-        _screen.value = Screen.Scanner
-    }
-
-    fun switchEvent() {
-        _screen.value = Screen.EventPicker
-    }
-
-    fun setScanMode(mode: ScanMode) { _scanMode.value = mode }
-    fun setSoundEnabled(v: Boolean) { _soundEnabled.value = v }
-    fun setVibrateEnabled(v: Boolean) { _vibrateEnabled.value = v }
+    fun onNext()        { _screen.value = Screen.Scanner }
+    fun openSettings()  { _screen.value = Screen.Settings }
+    fun closeSettings() { _screen.value = Screen.Scanner }
+    fun switchEvent()   { _screen.value = Screen.EventPicker }
+    fun selectEvent(event: Event) { _selectedEvent.value = event }
+    fun startScanning() { _screen.value = Screen.Scanner }
+    fun setScanMode(mode: ScanMode)  { _scanMode.value = mode }
+    fun setSoundEnabled(v: Boolean)  { _soundEnabled.value = v }
+    fun setVibrateEnabled(v: Boolean){ _vibrateEnabled.value = v }
 }
