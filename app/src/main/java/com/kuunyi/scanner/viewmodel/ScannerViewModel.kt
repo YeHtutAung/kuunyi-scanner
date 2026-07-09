@@ -89,30 +89,33 @@ class ScannerViewModel(
 
         _loading.value = true
         viewModelScope.launch {
-            val apiResult = apiClient.recordScan(payload.jti, payload.eid, gate)
-            _loading.value = false
-            when (apiResult) {
-                is ScanApiResult.Ok ->
-                    handleResult(ScanResult.Valid(payload.jti, payload.tier, payload.admits))
-                is ScanApiResult.AlreadyUsed ->
-                    handleResult(ScanResult.AlreadyUsed(
-                        payload.jti, payload.tier,
-                        apiResult.firstScanTime, apiResult.firstScanGate,
-                    ))
-                is ScanApiResult.NotFound ->
-                    handleResult(ScanResult.FakeTicket(payload.jti))
-                is ScanApiResult.AuthError -> {
-                    _toastMessage.value = "Auth error — contact supervisor"
-                    _scanResetKey.value++
+            try {
+                val apiResult = apiClient.recordScan(payload.jti, payload.eid, gate)
+                when (apiResult) {
+                    is ScanApiResult.Ok ->
+                        handleResult(ScanResult.Valid(payload.jti, payload.tier, payload.admits))
+                    is ScanApiResult.AlreadyUsed ->
+                        handleResult(ScanResult.AlreadyUsed(
+                            payload.jti, payload.tier,
+                            apiResult.firstScanTime, apiResult.firstScanGate,
+                        ))
+                    is ScanApiResult.NotFound ->
+                        handleResult(ScanResult.FakeTicket(payload.jti))
+                    is ScanApiResult.AuthError -> {
+                        _toastMessage.value = "Auth error — contact supervisor"
+                        _scanResetKey.value++
+                    }
+                    is ScanApiResult.ServerError -> {
+                        _toastMessage.value = "Server error, try again"
+                        _scanResetKey.value++
+                    }
+                    is ScanApiResult.NetworkError -> {
+                        _toastMessage.value = "No connection"
+                        _scanResetKey.value++
+                    }
                 }
-                is ScanApiResult.ServerError -> {
-                    _toastMessage.value = "Server error, try again"
-                    _scanResetKey.value++
-                }
-                is ScanApiResult.NetworkError -> {
-                    _toastMessage.value = "No connection"
-                    _scanResetKey.value++
-                }
+            } finally {
+                _loading.value = false
             }
         }
     }

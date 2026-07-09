@@ -46,8 +46,10 @@ open class ScanApiClient(
                     401, 403 -> ScanApiResult.AuthError
                     else -> ScanApiResult.ServerError
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                // Rethrow CancellationException to preserve coroutine cancellation.
                 // Covers IOException, SocketTimeoutException, SSLHandshakeException, etc.
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 ScanApiResult.NetworkError
             }
         }
