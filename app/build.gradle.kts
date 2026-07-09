@@ -14,6 +14,13 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        buildConfigField("String", "SCAN_API_BASE_URL",
+            "\"${project.findProperty("SCAN_API_BASE_URL") ?: "https://api.example.com"}\"")
+        buildConfigField("String", "SCAN_API_KEY",
+            "\"${project.findProperty("SCAN_API_KEY") ?: "dev-api-key"}\"")
+        buildConfigField("String", "ED25519_PUBLIC_KEY_V1",
+            "\"${project.findProperty("ED25519_PUBLIC_KEY_V1") ?: ""}\"")
     }
 
     buildTypes {
@@ -37,6 +44,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -66,10 +74,14 @@ dependencies {
     // ML Kit Barcode Scanning
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
+    // JWT and cryptography
+    implementation("com.nimbusds:nimbus-jose-jwt:9.37.3")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     // Unit tests
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
