@@ -14,6 +14,8 @@ open class ScanApiClient(
     private val apiKey: String,
     private val versionCode: Int,
 ) {
+    private fun String.escapeJson() = replace("\\", "\\\\").replace("\"", "\\\"")
+
     open suspend fun recordScan(jti: String, eid: String, gate: String): ScanApiResult =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
@@ -27,11 +29,14 @@ open class ScanApiClient(
                     readTimeout = 10_000
                     doOutput = true
                 }
-                val body = """{"jti":"$jti","eid":"$eid","gate":"$gate"}"""
+                val body = """{"jti":"${jti.escapeJson()}","eid":"${eid.escapeJson()}","gate":"${gate.escapeJson()}"}"""
                 conn.outputStream.use { it.write(body.toByteArray()) }
                 when (conn.responseCode) {
                     200 -> ScanApiResult.Ok
                     409 -> {
+                        // HttpURLConnection puts 4xx bodies on errorStream (not inputStream).
+                        // MockWebServer serves them on inputStream regardless, so this path
+                        // is tested via MockWebServer abstraction, not the real stream.
                         val json = (conn.errorStream ?: conn.inputStream).bufferedReader().readText()
                         val time = Regex(""""firstScanTime"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1) ?: ""
                         val g = Regex(""""firstScanGate"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1) ?: ""
@@ -42,6 +47,7 @@ open class ScanApiClient(
                     else -> ScanApiResult.ServerError
                 }
             } catch (_: Exception) {
+                // Covers IOException, SocketTimeoutException, SSLHandshakeException, etc.
                 ScanApiResult.NetworkError
             }
         }
