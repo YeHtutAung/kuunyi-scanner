@@ -373,6 +373,7 @@ fun ScannerScreen(vm: ScannerViewModel) {
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.45f))
+                    .clickable(enabled = false) {}
             ) {
                 androidx.compose.material3.CircularProgressIndicator(color = Color.White)
             }
