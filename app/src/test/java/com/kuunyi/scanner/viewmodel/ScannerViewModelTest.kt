@@ -139,6 +139,12 @@ class ScannerViewModelTest {
         assertTrue(v.currentResult.value is ScanResult.FakeTicket)
     }
 
+    @Test fun `unknown key shows FakeTicket`() = runTest {
+        val v = vm(verifier = FakeVerifier(throws = UnknownKeyException("v99")))
+        v.onBarcodeDetected("any")
+        assertTrue(v.currentResult.value is ScanResult.FakeTicket)
+    }
+
     @Test fun `expired JWT shows Expired result with correct jti`() = runTest {
         val v = vm(verifier = FakeVerifier(throws = ExpiredException("TKT-OLD", "GA", 1_000L)))
         v.onBarcodeDetected("any")
