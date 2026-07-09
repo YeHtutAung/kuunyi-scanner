@@ -20,11 +20,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -44,6 +48,7 @@ import com.kuunyi.scanner.ui.theme.Dark
 import com.kuunyi.scanner.ui.theme.Green
 import com.kuunyi.scanner.ui.theme.GrayAaa
 import com.kuunyi.scanner.ui.theme.GrayF0
+import com.kuunyi.scanner.ui.theme.Red
 import com.kuunyi.scanner.ui.theme.InterTightFamily
 import com.kuunyi.scanner.viewmodel.ScannerViewModel
 
@@ -54,6 +59,7 @@ fun SettingsScreen(vm: ScannerViewModel) {
     val soundEnabled by vm.soundEnabled.collectAsStateWithLifecycle()
     val vibrateEnabled by vm.vibrateEnabled.collectAsStateWithLifecycle()
     val scanCount by vm.scanCount.collectAsStateWithLifecycle()
+    val gateName by vm.gateName.collectAsStateWithLifecycle()
 
     val view = LocalView.current
     val window = (LocalContext.current as Activity).window
@@ -120,6 +126,38 @@ fun SettingsScreen(vm: ScannerViewModel) {
                 label = "Vibrate on result",
                 right = { Toggle(value = vibrateEnabled, onChange = vm::setVibrateEnabled) },
             )
+
+            SectionLabel("GATE")
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                OutlinedTextField(
+                    value = gateName,
+                    onValueChange = { vm.setGateName(it) },
+                    label = { Text("Gate name", fontSize = 13.sp) },
+                    placeholder = { Text("e.g. Gate A, VIP Entrance", fontSize = 13.sp) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                    ),
+                    isError = gateName.isBlank(),
+                )
+                if (gateName.isBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Required — scanning is disabled without a gate name",
+                        fontSize = 11.sp,
+                        color = Red,
+                    )
+                }
+            }
+            HorizontalDivider(color = GrayF0)
 
             SectionLabel("EVENT")
 
