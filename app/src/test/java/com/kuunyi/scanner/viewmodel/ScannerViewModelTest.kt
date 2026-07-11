@@ -1,5 +1,6 @@
 package com.kuunyi.scanner.viewmodel
 
+import com.kuunyi.scanner.BuildConfig
 import com.kuunyi.scanner.data.*
 import com.kuunyi.scanner.network.ScanApiClient
 import com.kuunyi.scanner.network.ScanApiResult
@@ -217,5 +218,49 @@ class ScannerViewModelTest {
         val v = vm()
         v.onDemoResult(ScanResult.FakeTicket())
         assertEquals(0, v.scanCount.value)
+    }
+
+    // --- API Config ---
+
+    @Test fun `setApiHost updates apiHost StateFlow`() {
+        val v = vm()
+        v.setApiHost("https://newhost.example.com")
+        assertEquals("https://newhost.example.com", v.apiHost.value)
+    }
+
+    @Test fun `setApiPort updates apiPort StateFlow`() {
+        val v = vm()
+        v.setApiPort("8080")
+        assertEquals("8080", v.apiPort.value)
+    }
+
+    @Test fun `resetApiConfig restores BuildConfig defaults`() {
+        val v = vm()
+        v.setApiHost("https://other.example.com")
+        v.setApiPort("9000")
+        v.resetApiConfig()
+        assertEquals(BuildConfig.SCAN_API_HOST, v.apiHost.value)
+        assertEquals(BuildConfig.SCAN_API_PORT, v.apiPort.value)
+    }
+
+    @Test fun `setApiHost updates apiClient baseUrl`() {
+        val fakeApi = FakeApiClient()
+        val v = ScannerViewModel(verifier = FakeVerifier(), apiClient = fakeApi)
+        v.setApiHost("https://newhost.com")
+        assertTrue(fakeApi.baseUrl.startsWith("https://newhost.com"))
+    }
+
+    @Test fun `buildBaseUrl formats host and port`() {
+        assertEquals(
+            "https://api.example.com:443",
+            ScannerViewModel.buildBaseUrl("https://api.example.com", "443"),
+        )
+    }
+
+    @Test fun `buildBaseUrl trims trailing slash from host`() {
+        assertEquals(
+            "https://api.example.com:443",
+            ScannerViewModel.buildBaseUrl("https://api.example.com/", "443"),
+        )
     }
 }

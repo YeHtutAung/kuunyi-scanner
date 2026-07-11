@@ -10,7 +10,7 @@ sealed class ScanApiResult {
 }
 
 open class ScanApiClient(
-    private val baseUrl: String,
+    var baseUrl: String,
     private val apiKey: String,
     private val versionCode: Int,
 ) {

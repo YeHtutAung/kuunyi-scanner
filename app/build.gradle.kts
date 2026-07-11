@@ -15,10 +15,14 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        buildConfigField("String", "SCAN_API_BASE_URL",
-            "\"${project.findProperty("SCAN_API_BASE_URL") ?: "https://api.example.com"}\"")
+        buildConfigField("String", "SCAN_API_HOST",
+            "\"${project.findProperty("SCAN_API_HOST") ?: "https://api.example.com"}\"")
+        buildConfigField("String", "SCAN_API_PORT",
+            "\"${project.findProperty("SCAN_API_PORT") ?: "443"}\"")
         buildConfigField("String", "SCAN_API_KEY",
             "\"${project.findProperty("SCAN_API_KEY") ?: "dev-api-key"}\"")
+        buildConfigField("String", "SETTINGS_PIN",
+            "\"${project.findProperty("SETTINGS_PIN") ?: "111111"}\"")
         buildConfigField("String", "ED25519_PUBLIC_KEY_V1",
             "\"${project.findProperty("ED25519_PUBLIC_KEY_V1") ?: ""}\"")
     }
@@ -82,6 +86,12 @@ dependencies {
 
     // Unit tests
     testImplementation("junit:junit:4.13.2")
+
+    // Instrumented / Compose UI tests
+    androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     // Tink is a transitive dep of nimbus-jose-jwt but must be explicit for unit-test classpath

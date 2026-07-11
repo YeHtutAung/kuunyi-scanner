@@ -16,19 +16,27 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -64,6 +72,13 @@ fun SettingsScreen(vm: ScannerViewModel) {
     val vibrateEnabled by vm.vibrateEnabled.collectAsStateWithLifecycle()
     val scanCount by vm.scanCount.collectAsStateWithLifecycle()
     val gateName by vm.gateName.collectAsStateWithLifecycle()
+    val apiHost by vm.apiHost.collectAsStateWithLifecycle()
+    val apiPort by vm.apiPort.collectAsStateWithLifecycle()
+
+    var pinUnlocked by remember { mutableStateOf(false) }
+    var showPinDialog by remember { mutableStateOf(false) }
+    var pinInput by remember { mutableStateOf("") }
+    var pinError by remember { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
     val view = LocalView.current
@@ -104,7 +119,12 @@ fun SettingsScreen(vm: ScannerViewModel) {
         }
         HorizontalDivider(color = GrayF0)
 
-        Column(modifier = Modifier.weight(1f).padding(horizontal = 20.dp)) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
             SectionLabel("SCANNING")
 
             SettingsRow(
@@ -198,9 +218,161 @@ fun SettingsScreen(vm: ScannerViewModel) {
                     )
                 },
             )
+
+            SectionLabel("SERVER")
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                Box {
+                    OutlinedTextField(
+                        value = apiHost,
+                        onValueChange = { if (pinUnlocked) vm.setApiHost(it) },
+                        label = { Text("API Host", fontSize = 13.sp) },
+                        placeholder = { Text("https://api.example.com", fontSize = 13.sp) },
+                        singleLine = true,
+                        enabled = pinUnlocked,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            disabledContainerColor = Color.White,
+                            disabledTextColor = Dark,
+                            disabledLabelColor = GrayAaa,
+                        ),
+                    )
+                    if (!pinUnlocked) {
+                        Box(modifier = Modifier
+                            .matchParentSize()
+                            .semantics { contentDescription = "Edit API host" }
+                            .clickable { showPinDialog = true })
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Box {
+                    OutlinedTextField(
+                        value = apiPort,
+                        onValueChange = { if (pinUnlocked) vm.setApiPort(it) },
+                        label = { Text("Port", fontSize = 13.sp) },
+                        placeholder = { Text("443", fontSize = 13.sp) },
+                        singleLine = true,
+                        enabled = pinUnlocked,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Done,
+                        ),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            disabledContainerColor = Color.White,
+                            disabledTextColor = Dark,
+                            disabledLabelColor = GrayAaa,
+                        ),
+                    )
+                    if (!pinUnlocked) {
+                        Box(modifier = Modifier
+                            .matchParentSize()
+                            .semantics { contentDescription = "Edit port" }
+                            .clickable { showPinDialog = true })
+                    }
+                }
+            }
+            HorizontalDivider(color = GrayF0)
+            SettingsRow(
+                label = "Reset to default",
+                right = {
+                    Text(
+                        "Reset",
+                        fontSize = 12.5.sp,
+                        color = Red,
+                        modifier = Modifier.clickable {
+                            if (pinUnlocked) vm.resetApiConfig() else showPinDialog = true
+                        }
+                    )
+                },
+                showTopDivider = false,
+            )
+
+            Spacer(Modifier.height(8.dp))
         }
 
         NavPill(light = false)
+    }
+
+    if (showPinDialog) {
+        AlertDialog(
+            onDismissRequest = { showPinDialog = false; pinInput = ""; pinError = false },
+            title = {
+                Text(
+                    "Enter PIN",
+                    fontFamily = InterTightFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 17.sp,
+                    color = Dark,
+                )
+            },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = pinInput,
+                        onValueChange = { if (it.length <= 6) { pinInput = it; pinError = false } },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.NumberPassword,
+                            imeAction = ImeAction.Done,
+                        ),
+                        keyboardActions = KeyboardActions(onDone = {
+                            if (pinInput == vm.settingsPin) {
+                                pinUnlocked = true; showPinDialog = false; pinInput = ""
+                            } else {
+                                pinError = true
+                            }
+                        }),
+                        isError = pinError,
+                        singleLine = true,
+                        label = { Text("PIN", fontSize = 13.sp) },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { contentDescription = "PIN input" },
+                    )
+                    if (pinError) {
+                        Spacer(Modifier.height(4.dp))
+                        Text("Incorrect PIN", fontSize = 11.sp, color = Red)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (pinInput == vm.settingsPin) {
+                        pinUnlocked = true; showPinDialog = false; pinInput = ""
+                    } else {
+                        pinError = true
+                    }
+                }) {
+                    Text(
+                        "Confirm",
+                        color = Dark,
+                        fontFamily = InterTightFamily,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPinDialog = false; pinInput = ""; pinError = false }) {
+                    Text("Cancel", color = GrayAaa, fontFamily = InterTightFamily)
+                }
+            },
+            containerColor = Color.White,
+        )
     }
 }
 
